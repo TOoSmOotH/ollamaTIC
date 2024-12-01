@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ollama Proxy Monitoring</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="dark-mode">
+    <header>
+        <h1>Ollama Proxy Monitoring</h1>
+        <div class="theme-toggle-container">
+            <span>🌞</span>
+            <label class="switch">
+                <input type="checkbox" id="theme-toggle" checked>
+                <span class="slider round"></span>
+            </label>
+            <span>🌙</span>
+        </div>
+    </header>
+    <main>
+        <div class="dashboard-grid">
+            <section class="stats-card" id="token-stats">
+                <h2>Token Statistics</h2>
+                <div class="stat-group">
+                    <div class="stat-item">
+                        <h3>Total Input Tokens</h3>
+                        <p id="total-input-tokens">0</p>
+                    </div>
+                    <div class="stat-item">
+                        <h3>Total Output Tokens</h3>
+                        <p id="total-output-tokens">0</p>
+                    </div>
+                    <div class="stat-item">
+                        <h3>Estimated Cost Saved</h3>
+                        <p id="cost-saved">$0.00</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="chart-card">
+                <h2>Request Duration Over Time</h2>
+                <canvas id="duration-chart"></canvas>
+            </section>
+
+            <section class="chart-card">
+                <h2>Context Size Distribution</h2>
+                <canvas id="context-chart"></canvas>
+            </section>
+
+            <section class="chart-card">
+                <h2>Token Usage Trends</h2>
+                <canvas id="token-chart"></canvas>
+            </section>
+
+            <section class="history-card">
+                <h2>Recent Requests</h2>
+                <div class="history-container">
+                    <ul id="history-list"></ul>
+                </div>
+            </section>
+        </div>
+    </main>
+    <script src="script.js"></script>
+</body>
+</html>
