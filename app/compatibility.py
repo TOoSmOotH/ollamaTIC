@@ -1,21 +1,16 @@
 """
 Compatibility layer for ensuring transparent operation with Cline and other Ollama clients.
 This module handles the processing of requests and responses to maintain exact Ollama API format
-while allowing optional agent enhancement.
+while allowing optional agent enhancement through different paths.
 """
 
 from fastapi import Request, Response
 from typing import Optional, Dict, Any, Union
 import json
 from pydantic import BaseModel
+from app.config import get_settings
 
-
-class AgentHeaders:
-    """Constants for agent-specific headers"""
-    ENABLE = "X-Agent-Enable"
-    MODE = "X-Agent-Mode"
-    FEATURES = "X-Agent-Features"
-
+settings = get_settings()
 
 class AgentMode:
     """Constants for agent operation modes"""
@@ -26,34 +21,68 @@ class AgentMode:
 class CompatibilityLayer:
     """
     Handles request and response processing to maintain compatibility with Ollama API
-    while allowing optional agent enhancement.
+    while allowing optional agent enhancement through different paths.
     """
 
-    @staticmethod
-    async def should_activate_agent(request: Request) -> bool:
-        """
-        Determine if agent enhancement should be activated based on request headers.
-        """
-        agent_enabled = request.headers.get(AgentHeaders.ENABLE, "").lower() == "true"
-        return agent_enabled
+    def __init__(self):
+        self.settings = get_settings()
+        # Load model-specific configurations
+        self.model_configs = self.settings.model_configs or {}
 
     @staticmethod
-    async def get_agent_mode(request: Request) -> str:
+    def is_agent_path(path: str) -> bool:
         """
-        Get the agent operation mode from request headers.
+        Determine if the request path is an agent-enabled path.
+        Agent paths start with /agent/
+        """
+        return path.startswith("/agent/")
+
+    def get_base_path(self, path: str) -> str:
+        """
+        Get the base API path from either standard or agent path.
+        /agent/chat -> /api/chat
+        /api/chat -> /api/chat
+        """
+        if self.is_agent_path(path):
+            return path.replace("/agent/", "/api/", 1)
+        return path
+
+    async def should_activate_agent(self, request: Request, body: Dict[str, Any]) -> bool:
+        """
+        Determine if agent enhancement should be activated based on:
+        1. Path (/agent/ prefix)
+        2. Model-specific configuration
+        3. Client identifier (if available)
+        """
+        # Check path-based activation
+        if self.is_agent_path(request.url.path):
+            return True
+
+        # Check model-specific configuration
+        model_name = body.get("model", "")
+        if model_name in self.model_configs:
+            return self.model_configs[model_name].get("agent_enabled", False)
+
+        return False
+
+    async def get_agent_mode(self, request: Request, body: Dict[str, Any]) -> str:
+        """
+        Get the agent operation mode based on configuration.
         Defaults to passive mode.
         """
-        return request.headers.get(AgentHeaders.MODE, AgentMode.PASSIVE).lower()
+        model_name = body.get("model", "")
+        if model_name in self.model_configs:
+            return self.model_configs[model_name].get("agent_mode", AgentMode.PASSIVE)
+        return AgentMode.PASSIVE
 
-    @staticmethod
-    async def get_enabled_features(request: Request) -> list:
+    async def get_enabled_features(self, request: Request, body: Dict[str, Any]) -> list:
         """
-        Get list of enabled agent features from request headers.
+        Get list of enabled agent features from configuration.
         """
-        features_header = request.headers.get(AgentHeaders.FEATURES, "")
-        if not features_header:
-            return []
-        return [f.strip() for f in features_header.split(",")]
+        model_name = body.get("model", "")
+        if model_name in self.model_configs:
+            return self.model_configs[model_name].get("enabled_features", [])
+        return []
 
     @staticmethod
     async def extract_body(request: Request) -> Dict[str, Any]:
@@ -76,11 +105,14 @@ class CompatibilityLayer:
         Returns:
             Tuple of (original request, agent context dict)
         """
+        body = await self.extract_body(request)
+        
         agent_context = {
-            "enabled": await self.should_activate_agent(request),
-            "mode": await self.get_agent_mode(request),
-            "features": await self.get_enabled_features(request),
-            "original_body": await self.extract_body(request)
+            "enabled": await self.should_activate_agent(request, body),
+            "mode": await self.get_agent_mode(request, body),
+            "features": await self.get_enabled_features(request, body),
+            "original_body": body,
+            "base_path": self.get_base_path(request.url.path)
         }
         
         return request, agent_context
