@@ -9,6 +9,7 @@ from fastapi import Request
 from pydantic import BaseModel
 import logging
 from datetime import datetime
+from app.learning import LearningSystem
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ class OllamaAgent:
     """
     def __init__(self):
         self.interactions: list[Interaction] = []
-        self.language_patterns: Dict[str, Dict[str, Any]] = {}
+        self.learning_system = LearningSystem()
         self.context_memory: Dict[str, Any] = {}
 
     async def process_request(self, request: Request) -> Dict[str, Any]:
@@ -38,18 +39,24 @@ class OllamaAgent:
         model = body.get("model", "")
         prompt = body.get("prompt", "")
 
-        # Enhance the prompt based on learned patterns
-        enhanced_body = await self._enhance_prompt(body)
+        # Get relevant context from memory
+        context_key = f"{model}:{prompt[:50]}"
+        context = self.context_memory.get(context_key, {})
+
+        # Enhance the prompt using learned patterns
+        enhanced_prompt = self.learning_system.enhance_prompt(prompt, model, context)
+        if enhanced_prompt != prompt:
+            body["prompt"] = enhanced_prompt
         
         # Store context for this interaction
         context = {
             "timestamp": datetime.utcnow(),
             "model": model,
             "original_prompt": prompt,
-            "enhanced_prompt": enhanced_body.get("prompt", prompt),
+            "enhanced_prompt": enhanced_prompt,
         }
 
-        return enhanced_body, context
+        return body, context
 
     async def process_response(
         self,
@@ -60,6 +67,8 @@ class OllamaAgent:
         Process the response stream, learning from the interaction.
         """
         full_response = ""
+        error_detected = False
+        error_message = None
         
         async for chunk in response:
             try:
@@ -67,9 +76,15 @@ class OllamaAgent:
                     data = json.loads(chunk.decode())
                     if "response" in data:
                         full_response += data["response"]
+                    # Check for error indicators
+                    if "error" in data:
+                        error_detected = True
+                        error_message = data["error"]
                 yield chunk
             except Exception as e:
                 logger.error(f"Error processing response chunk: {e}")
+                error_detected = True
+                error_message = str(e)
                 yield chunk
 
         # Learn from this interaction
@@ -77,7 +92,9 @@ class OllamaAgent:
             context["model"],
             context["original_prompt"],
             full_response,
-            context
+            context,
+            not error_detected,
+            error_message
         )
 
     async def _get_request_body(self, request: Request) -> Dict[str, Any]:
@@ -90,38 +107,26 @@ class OllamaAgent:
         except json.JSONDecodeError:
             return {}
 
-    async def _enhance_prompt(self, body: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Enhance the prompt based on learned patterns and context.
-        """
-        model = body.get("model", "")
-        prompt = body.get("prompt", "")
-        
-        # Apply learned patterns for the model/language
-        if model in self.language_patterns:
-            patterns = self.language_patterns[model]
-            # TODO: Apply learned patterns to enhance prompt
-        
-        # Add relevant context from memory
-        context_key = f"{model}:{prompt[:50]}"  # Simple context key
-        if context_key in self.context_memory:
-            # TODO: Incorporate relevant context
-            pass
-
-        # For now, return original body
-        # TODO: Implement actual prompt enhancement
-        return body
-
     async def _learn_from_interaction(
         self,
         model: str,
         prompt: str,
         response: str,
-        context: Dict[str, Any]
+        context: Dict[str, Any],
+        success: bool,
+        error_message: Optional[str] = None
     ):
         """
         Learn from the interaction to improve future responses.
         """
+        # Analyze the interaction
+        learning_results = self.learning_system.analyze_interaction(
+            prompt=prompt,
+            response=response,
+            model=model,
+            context=context
+        )
+        
         # Create interaction record
         interaction = Interaction(
             timestamp=context["timestamp"],
@@ -130,27 +135,28 @@ class OllamaAgent:
             response=response,
             context=context,
             success_indicators={
-                # TODO: Implement success metrics
-                "completion": 1.0 if response else 0.0,
+                "completion": 1.0 if success else 0.0,
+                "patterns_found": len(learning_results["patterns_found"]),
             }
         )
         
         # Store the interaction
         self.interactions.append(interaction)
         
-        # Update language patterns
-        if model not in self.language_patterns:
-            self.language_patterns[model] = {}
-        
-        # TODO: Implement pattern learning
-        # - Analyze prompt/response pairs
-        # - Extract successful patterns
-        # - Update language-specific knowledge
+        # Update success metrics for any code blocks
+        for language in learning_results["languages"]:
+            self.learning_system.update_success_metrics(
+                language=language,
+                code_block=response,
+                success=success,
+                error_message=error_message
+            )
         
         # Update context memory
         context_key = f"{model}:{prompt[:50]}"
         self.context_memory[context_key] = {
             "last_used": datetime.utcnow(),
             "success_rate": interaction.success_indicators["completion"],
-            # TODO: Add more context metrics
+            "languages": learning_results["languages"],
+            "patterns": learning_results["patterns_found"]
         }
