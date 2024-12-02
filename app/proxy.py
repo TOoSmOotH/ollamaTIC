@@ -73,8 +73,13 @@ class OllamaProxy:
                         ),
                         media_type="text/event-stream"
                     )
-
-                return JSONResponse(content=response.json())
+                else:
+                    # For non-streaming responses, just return the JSON response
+                    json_response = response.json()
+                    # Process through agent if it's a completion response
+                    if isinstance(json_response, dict) and "response" in json_response:
+                        json_response = await self.agent.process_single_response(json_response, context)
+                    return JSONResponse(content=json_response)
 
             except HTTPError as e:
                 raise HTTPException(

@@ -58,44 +58,44 @@ class OllamaAgent:
 
         return body, context
 
-    async def process_response(
-        self,
-        response: AsyncGenerator[bytes, None],
-        context: Dict[str, Any]
-    ) -> AsyncGenerator[bytes, None]:
-        """
-        Process the response stream, learning from the interaction.
-        """
-        full_response = ""
-        error_detected = False
-        error_message = None
+    async def process_response(self, response_stream, context: Dict[str, Any]) -> AsyncGenerator[bytes, None]:
+        """Process a streaming response from the LLM."""
+        accumulated_response = ""
         
-        async for chunk in response:
-            try:
-                if isinstance(chunk, bytes):
-                    data = json.loads(chunk.decode())
-                    if "response" in data:
-                        full_response += data["response"]
-                    # Check for error indicators
-                    if "error" in data:
-                        error_detected = True
-                        error_message = data["error"]
+        async for chunk in response_stream:
+            if isinstance(chunk, bytes):
+                chunk_str = chunk.decode('utf-8')
+            else:
+                chunk_str = chunk
+                
+            # Accumulate response for learning
+            accumulated_response += chunk_str
+            
+            # Forward the chunk
+            if isinstance(chunk, str):
+                yield chunk.encode('utf-8')
+            else:
                 yield chunk
-            except Exception as e:
-                logger.error(f"Error processing response chunk: {e}")
-                error_detected = True
-                error_message = str(e)
-                yield chunk
+        
+        # Learn from the complete interaction after streaming is done
+        if context.get("prompt"):
+            await self._learn_from_interaction(
+                prompt=context["prompt"],
+                response=accumulated_response,
+                model=context.get("model", "unknown"),
+                context=context
+            )
 
-        # Learn from this interaction
-        await self._learn_from_interaction(
-            context["model"],
-            context["original_prompt"],
-            full_response,
-            context,
-            not error_detected,
-            error_message
-        )
+    async def process_single_response(self, response: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """Process a single non-streaming response."""
+        if context.get("prompt") and response.get("response"):
+            await self._learn_from_interaction(
+                prompt=context["prompt"],
+                response=response["response"],
+                model=context.get("model", "unknown"),
+                context=context
+            )
+        return response
 
     async def _get_request_body(self, request: Request) -> Dict[str, Any]:
         """Extract and parse request body."""
@@ -113,7 +113,7 @@ class OllamaAgent:
         prompt: str,
         response: str,
         context: Dict[str, Any],
-        success: bool,
+        success: bool = True,
         error_message: Optional[str] = None
     ):
         """

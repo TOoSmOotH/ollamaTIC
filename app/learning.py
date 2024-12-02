@@ -11,6 +11,7 @@ import re
 from collections import defaultdict
 import numpy as np
 from dataclasses import dataclass, field
+from .vector_store import VectorStore
 
 
 @dataclass
@@ -38,10 +39,11 @@ class LearningSystem:
     """
     Core learning system that analyzes interactions and improves responses.
     """
-    def __init__(self):
+    def __init__(self, vector_store: Optional[VectorStore] = None):
         self.language_patterns: Dict[str, LanguagePatterns] = {}
         self.context_memory: Dict[str, Dict[str, Any]] = {}
         self.code_block_regex = re.compile(r'```(\w+)?\n(.*?)\n```', re.DOTALL)
+        self.vector_store = vector_store or VectorStore()
         
     def analyze_interaction(
         self,
@@ -78,6 +80,47 @@ class LearningSystem:
                 response_code_blocks
             )
             learning_results["patterns_found"].extend(patterns)
+            
+            # Store code blocks in vector store
+            for block in response_code_blocks:
+                if block.language == language:
+                    self.vector_store.store_code_snippet(
+                        code=block.code,
+                        language=language,
+                        metadata={
+                            "context": block.context,
+                            "success_rate": block.success_rate,
+                            "usage_count": block.usage_count,
+                            "model": model,
+                            "timestamp": datetime.now().isoformat()
+                        }
+                    )
+            
+            # Store learned patterns
+            patterns = self.language_patterns[language]
+            self.vector_store.store_pattern(
+                pattern={
+                    "common_imports": dict(patterns.common_imports),
+                    "function_patterns": dict(patterns.function_patterns),
+                    "error_patterns": patterns.error_patterns,
+                    "best_practices": dict(patterns.best_practices)
+                },
+                pattern_type="language_patterns",
+                language=language
+            )
+        
+        # Store the conversation for context learning
+        self.vector_store.store_conversation(
+            messages=[
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": response}
+            ],
+            metadata={
+                "model": model,
+                "languages": list(languages),
+                "context": context
+            }
+        )
         
         return learning_results
 
@@ -88,7 +131,7 @@ class LearningSystem:
         context: Optional[Dict[str, Any]] = None
     ) -> str:
         """
-        Enhance a prompt using learned patterns.
+        Enhance a prompt using learned patterns and similar examples.
         """
         # Extract code blocks to identify languages
         code_blocks = self._extract_code_blocks(prompt)
@@ -110,12 +153,48 @@ class LearningSystem:
                     if confidence > 0.9:  # Very high confidence threshold
                         enhanced_prompt += f"\nPlease follow this best practice: {practice}"
                 
-                # Add error handling patterns if similar context exists
-                if context and "error_pattern" in context:
-                    error_pattern = context["error_pattern"]
-                    if error_pattern in patterns.error_patterns:
-                        solution = patterns.error_patterns[error_pattern]
-                        enhanced_prompt += f"\nConsider this solution for similar errors: {solution}"
+                # Search for similar code examples
+                similar_code = self.vector_store.search_code_snippets(
+                    query=prompt,
+                    language=language,
+                    limit=2
+                )
+                
+                if similar_code:
+                    enhanced_prompt += "\n\nHere are some relevant examples:\n"
+                    for example in similar_code:
+                        if example["score"] > 0.8:  # Only include highly relevant examples
+                            enhanced_prompt += f"\n```{language}\n{example['code']}\n```\n"
+                
+                # Search for similar patterns
+                similar_patterns = self.vector_store.search_patterns(
+                    query=prompt,
+                    pattern_type="language_patterns",
+                    language=language,
+                    limit=1
+                )
+                
+                if similar_patterns:
+                    pattern = similar_patterns[0]["pattern"]
+                    if "error_patterns" in pattern:
+                        for error, solution in pattern["error_patterns"].items():
+                            if error in prompt:
+                                enhanced_prompt += f"\nConsider this solution for the error: {solution}"
+        
+        # Search for similar conversations for context
+        similar_convs = self.vector_store.search_conversations(
+            query=prompt,
+            limit=1
+        )
+        
+        if similar_convs:
+            conv = similar_convs[0]
+            if conv["score"] > 0.9:  # Only use very similar conversations
+                messages = conv["messages"]
+                enhanced_prompt += "\n\nBased on similar conversation context:"
+                for msg in messages:
+                    if msg["role"] == "assistant" and len(msg["content"]) < 500:
+                        enhanced_prompt += f"\n{msg['content']}"
         
         return enhanced_prompt
 
@@ -190,12 +269,37 @@ class LearningSystem:
         """
         imports = []
         if language == "python":
-            # Match Python imports
-            import_regex = re.compile(r'^(?:from\s+[\w.]+\s+)?import\s+[\w.]+(?:\s+as\s+\w+)?', re.MULTILINE)
+            # Match Python imports including from imports
+            import_regex = re.compile(r'^(?:from\s+[\w.]+\s+)?import\s+(?:[\w.]+(?:\s*,\s*[\w.]+)*(?:\s+as\s+\w+)?|\*)', re.MULTILINE)
             imports = import_regex.findall(code)
         elif language == "javascript":
-            # Match JS imports
-            import_regex = re.compile(r'^(?:import|require)\s*\([^)]+\)', re.MULTILINE)
+            # Match JS imports including require and ES6 imports
+            import_regex = re.compile(r'(?:import\s+(?:{[^}]+}|\*\s+as\s+\w+|\w+)\s+from\s+[\'"][^\'"]+'
+                                    r'|require\s*\([^)]+\)'
+                                    r'|import\s+[\'"][^\'"]+'
+                                    r'|export\s+(?:{[^}]+}|\*)\s+from\s+[\'"][^\'"]+'
+                                    r')', re.MULTILINE)
+            imports = import_regex.findall(code)
+        elif language == "typescript":
+            # Match TypeScript imports including type imports
+            import_regex = re.compile(r'(?:import\s+(?:type\s+)?(?:{[^}]+}|\*\s+as\s+\w+|\w+)\s+from\s+[\'"][^\'"]+'
+                                    r'|import\s+type\s+{[^}]+}\s+from\s+[\'"][^\'"]+'
+                                    r'|export\s+(?:type\s+)?(?:{[^}]+}|\*)\s+from\s+[\'"][^\'"]+'
+                                    r')', re.MULTILINE)
+            imports = import_regex.findall(code)
+        elif language == "java":
+            # Match Java imports
+            import_regex = re.compile(r'^import\s+(?:static\s+)?[\w.]+(?:\s*\.\s*\*)?;', re.MULTILINE)
+            imports = import_regex.findall(code)
+        elif language == "go":
+            # Match Go imports including parenthesized import groups
+            import_regex = re.compile(r'(?:import\s+(?:"[^"]+"|`[^`]+`)'
+                                    r'|import\s+\([^)]*\))', re.MULTILINE)
+            imports = import_regex.findall(code)
+        elif language == "rust":
+            # Match Rust imports including use statements and external crates
+            import_regex = re.compile(r'(?:use\s+(?:(?::[a-zA-Z0-9_]+)+(?:::[*{][^;]*)?|[a-zA-Z0-9_]+(?:::[*{][^;]*)?)'
+                                    r'|extern\s+crate\s+[a-zA-Z0-9_]+(?:\s+as\s+[a-zA-Z0-9_]+)?)', re.MULTILINE)
             imports = import_regex.findall(code)
         # Add more languages as needed
         
@@ -207,12 +311,42 @@ class LearningSystem:
         """
         patterns = []
         if language == "python":
-            # Match Python function definitions
-            func_regex = re.compile(r'def\s+(\w+)\s*\([^)]*\)\s*:')
+            # Match Python function definitions including async, decorators, and type hints
+            func_regex = re.compile(r'(?:@[\w.]+(?:\(.*?\))?\s+)*(?:async\s+)?def\s+(\w+)\s*(?:\[.*?\])?\s*\([^)]*\)\s*(?:->\s*[^:]+)?\s*:', re.MULTILINE)
             patterns = func_regex.findall(code)
         elif language == "javascript":
-            # Match JS function definitions
-            func_regex = re.compile(r'(?:function\s+(\w+)|(\w+)\s*=\s*function|\(\s*\)\s*=>)')
+            # Match JS function definitions including async, arrow functions, and class methods
+            func_regex = re.compile(r'(?:async\s+)?(?:function\s+(\w+)|(\w+)\s*=\s*(?:async\s+)?function|\(\s*[^)]*\)\s*=>'
+                                  r'|(?:get|set|static|async)\s+(\w+)\s*\([^)]*\)'
+                                  r'|(\w+)\s*\([^)]*\)\s*{)', re.MULTILINE)
+            matches = func_regex.finditer(code)
+            for match in matches:
+                # Get the first non-None group which contains the function name
+                name = next((g for g in match.groups() if g), '')
+                if name:
+                    patterns.append(name)
+        elif language == "typescript":
+            # Match TypeScript function definitions including type parameters and return types
+            func_regex = re.compile(r'(?:async\s+)?(?:function\s+(\w+)(?:<[^>]+>)?\s*\([^)]*\)(?:\s*:\s*[^{]+)?'
+                                  r'|(\w+)\s*=\s*(?:async\s+)?function(?:<[^>]+>)?\s*\([^)]*\)(?:\s*:\s*[^{]+)?'
+                                  r'|(\w+)\s*(?:<[^>]+>)?\s*\([^)]*\)(?:\s*:\s*[^{]+)?'
+                                  r'|(?:get|set|static|async)\s+(\w+)\s*\([^)]*\)(?:\s*:\s*[^{]+)?)', re.MULTILINE)
+            matches = func_regex.finditer(code)
+            for match in matches:
+                name = next((g for g in match.groups() if g), '')
+                if name:
+                    patterns.append(name)
+        elif language == "java":
+            # Match Java method definitions including annotations and modifiers
+            func_regex = re.compile(r'(?:@\w+(?:\([^)]*\))?\s+)*(?:public|private|protected|static|final|native|synchronized|abstract|transient)?\s+(?:<[^>]+>\s+)?(?:[\w\[\]]+\s+)?(\w+)\s*\([^)]*\)', re.MULTILINE)
+            patterns = func_regex.findall(code)
+        elif language == "go":
+            # Match Go function definitions including methods and interfaces
+            func_regex = re.compile(r'func\s+(?:\([^)]+\)\s+)?(\w+)\s*\([^)]*\)\s*(?:\([^)]*\)|[\w\[\]*]+)?', re.MULTILINE)
+            patterns = func_regex.findall(code)
+        elif language == "rust":
+            # Match Rust function definitions including generics, lifetimes, and traits
+            func_regex = re.compile(r'(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*(?:<[^>]+>)?\s*\([^)]*\)(?:\s*->\s*[^{]+)?', re.MULTILINE)
             patterns = func_regex.findall(code)
         # Add more languages as needed
         
@@ -241,6 +375,18 @@ class LearningSystem:
                     (block.success_rate * (block.usage_count - 1) + (1.0 if success else 0.0))
                     / block.usage_count
                 )
+                
+                # Store updated metrics in vector store
+                self.vector_store.store_code_snippet(
+                    code=block.code,
+                    language=language,
+                    metadata={
+                        "context": block.context,
+                        "success_rate": block.success_rate,
+                        "usage_count": block.usage_count,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                )
             
             # If there's an error, update error patterns
             if not success and error_message:
@@ -248,6 +394,16 @@ class LearningSystem:
                 error_pattern = self._simplify_error_message(error_message)
                 if error_pattern:
                     patterns.error_patterns[error_pattern] = code_block
+                    
+                    # Store error pattern
+                    self.vector_store.store_pattern(
+                        pattern={
+                            "error": error_pattern,
+                            "solution": code_block
+                        },
+                        pattern_type="error_pattern",
+                        language=language
+                    )
 
     def _simplify_error_message(self, error_message: str) -> str:
         """

@@ -20,6 +20,7 @@ import time
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.metrics import MetricsCollector
+from app.api.patterns import router as patterns_router
 
 # Load environment variables
 load_dotenv()
@@ -33,6 +34,9 @@ app = FastAPI(
 
 # Create API router
 api_router = APIRouter(prefix="/api")
+
+# Include patterns router
+api_router.include_router(patterns_router, prefix="/patterns")
 
 # Add CORS middleware
 app.add_middleware(
@@ -81,7 +85,7 @@ async def generate(request: Request):
 @api_router.post("/chat")
 async def chat(request: Request):
     """Forward chat requests to Ollama server"""
-    return await proxy.forward_request("/api/chat", request)
+    return await proxy.forward_request("/api/generate", request)
 
 # OpenAI-compatible endpoints
 @app.post("/v1/chat/completions")

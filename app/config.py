@@ -1,14 +1,15 @@
 from pydantic_settings import BaseSettings
 from typing import Dict, Any
 from functools import lru_cache
+from pydantic import Field
 
 
 class Settings(BaseSettings):
     """Application settings"""
     
     # Ollama server settings
-    ollama_server: str = "http://localhost:11434"
-    default_model: str = "llama2"
+    ollama_server: str = Field("http://gpu:11434", env="OLLAMA_SERVER")
+    default_model: str = Field("qwen:20k", env="DEFAULT_MODEL")
     
     # Agent configuration per model
     # Example:
@@ -20,7 +21,7 @@ class Settings(BaseSettings):
     #     }
     # }
     model_configs: Dict[str, Dict[str, Any]] = {
-        "codellama": {
+        "qwen:20k": {
             "agent_enabled": True,
             "agent_mode": "active",
             "enabled_features": ["code_enhancement", "context_aware"]
