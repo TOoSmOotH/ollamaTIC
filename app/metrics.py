@@ -3,6 +3,7 @@ import time
 from collections import deque
 from typing import Dict, List
 import threading
+from app.storage import Storage
 
 # Request metrics
 request_count = Counter(
@@ -50,7 +51,8 @@ class MetricsCollector:
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super(MetricsCollector, cls).__new__(cls)
-                cls._instance.request_history = deque(maxlen=100)  # Keep last 100 requests
+                cls._instance.request_history = deque(maxlen=100)  # Keep last 100 requests in memory
+                cls._instance.storage = Storage()  # Initialize storage
             return cls._instance
 
     def record_request(self, endpoint: str, model: str, duration: float):
@@ -60,14 +62,20 @@ class MetricsCollector:
         request_count.labels(endpoint=endpoint, model=model).inc()
         request_duration.labels(endpoint=endpoint, model=model).observe(duration)
         
-        # Add to request history
-        self.request_history.appendleft({
+        # Create request data
+        request_data = {
             "request_id": int(time.time() * 1000),
             "model": model,
             "endpoint": endpoint,
             "total_duration": duration,
             "timestamp": int(time.time())
-        })
+        }
+        
+        # Add to in-memory history
+        self.request_history.appendleft(request_data)
+        
+        # Persist to database
+        self.storage.save_request_metrics(request_data)
 
     def record_tokens(self, model: str, input_count: int, output_count: int, generation_duration: float):
         """
@@ -82,40 +90,43 @@ class MetricsCollector:
             
         # Update the last request with token information
         if self.request_history:
-            self.request_history[0].update({
+            last_request = self.request_history[0]
+            last_request.update({
                 "tokens_used": input_count + output_count,
                 "context_size": input_count,
                 "generation_duration": generation_duration
             })
+            # Update the persisted metrics
+            self.storage.save_request_metrics(last_request)
 
-    def get_request_history(self) -> List[Dict]:
-        """Get the request history"""
-        return list(self.request_history)
+    def get_request_history(self, limit: int = 100) -> List[Dict]:
+        """Get the request history from storage"""
+        return self.storage.get_request_history(limit)
 
-    def get_average_stats(self) -> Dict:
-        """Get average statistics from request history"""
-        stats = {
-            "average_tokens_used": 0,
-            "average_total_duration": 0,
-            "average_generation_duration": 0
-        }
+    def get_average_stats(self, window_hours: int = 24) -> Dict:
+        """Get average statistics from storage"""
+        return self.storage.get_average_stats(window_hours)
+
+    def get_model_stats(self, window_hours: int = 24) -> Dict[str, Dict[str, float]]:
+        """Get model-specific statistics from storage"""
+        return self.storage.get_model_stats(window_hours)
+
+    def get_cost_summary(self, window_hours: int = 24) -> Dict[str, float]:
+        """Get cost summary and potential savings"""
+        return self.storage.get_cost_summary(window_hours)
+
+    def format_cost_summary(self, window_hours: int = 24) -> str:
+        """Get a formatted string of the cost summary"""
+        summary = self.get_cost_summary(window_hours)
         
-        if not self.request_history:
-            return stats
-            
-        history_list = list(self.request_history)
-        total_requests = len(history_list)
+        return f"""Cost Analysis (Last {summary['time_window_hours']} hours)
         
-        if total_requests == 0:
-            return stats
-            
-        # Calculate averages from request history
-        total_tokens = sum(req.get('tokens_used', 0) for req in history_list)
-        total_duration = sum(req.get('total_duration', 0) for req in history_list)
-        total_generation = sum(req.get('generation_duration', 0) for req in history_list)
-        
-        stats["average_tokens_used"] = total_tokens / total_requests
-        stats["average_total_duration"] = total_duration / total_requests
-        stats["average_generation_duration"] = total_generation / total_requests
-            
-        return stats
+Total Usage:
+- Input Tokens:  {summary['total_input_tokens']:,}
+- Output Tokens: {summary['total_output_tokens']:,}
+
+Estimated Costs:
+- Claude Cost:   ${summary['claude_cost']:.2f}
+- GPT-4 Cost:    ${summary['gpt4_cost']:.2f}
+- Savings:       ${summary['potential_savings']:.2f} ({summary['savings_percentage']:.1f}%)
+"""

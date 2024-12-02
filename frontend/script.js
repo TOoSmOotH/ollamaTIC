@@ -125,29 +125,57 @@ function initializeCharts() {
     updateChartsTheme(document.body.classList.contains('dark-mode') ? 'dark' : 'light');
 }
 
-// Calculate cost savings
-function calculateCostSavings(inputTokens, outputTokens) {
-    const inputCost = (inputTokens / 1000000) * 3; // $3 per million input tokens
-    const outputCost = (outputTokens / 1000000) * 15; // $15 per million output tokens
-    return inputCost + outputCost;
+// Update stats display
+async function updateStats() {
+    try {
+        // Fetch history data for token counts
+        const historyResponse = await fetch('/api/v1/history');
+        const historyData = await historyResponse.json();
+
+        // Calculate total tokens from history data
+        const totalTokens = historyData.reduce((sum, req) => sum + (req.tokens_used || 0), 0);
+        const totalContextSize = historyData.reduce((sum, req) => sum + (req.context_size || 0), 0);
+        const inputTokens = totalContextSize;
+        const outputTokens = totalTokens - totalContextSize;
+        
+        // Update token counts
+        document.getElementById('total-input-tokens').textContent = formatNumber(inputTokens);
+        document.getElementById('total-output-tokens').textContent = formatNumber(outputTokens);
+        
+        // Calculate costs
+        const claudeInputCost = (inputTokens / 1_000_000) * 3;    // $3 per million input tokens
+        const claudeOutputCost = (outputTokens / 1_000_000) * 15;  // $15 per million output tokens
+        const claudeTotalCost = claudeInputCost + claudeOutputCost;
+        
+        const gpt4InputCost = (inputTokens / 1_000_000) * 2.5;    // $2.50 per million input tokens
+        const gpt4OutputCost = (outputTokens / 1_000_000) * 10;    // $10 per million output tokens
+        const gpt4TotalCost = gpt4InputCost + gpt4OutputCost;
+        
+        const savings = claudeTotalCost - gpt4TotalCost;
+        const savingsPercentage = claudeTotalCost > 0 ? (savings / claudeTotalCost) * 100 : 0;
+        
+        // Update costs display
+        document.getElementById('claude-cost').textContent = `$${claudeTotalCost.toFixed(2)}`;
+        document.getElementById('gpt4-cost').textContent = `$${gpt4TotalCost.toFixed(2)}`;
+        document.getElementById('cost-saved').textContent = `$${savings.toFixed(2)}`;
+        document.getElementById('savings-percent').textContent = 
+            `(${savingsPercentage > 0 ? '+' : ''}${savingsPercentage.toFixed(1)}%)`;
+        
+    } catch (error) {
+        console.error('Error updating stats:', error);
+        // Set default values on error
+        document.getElementById('total-input-tokens').textContent = '0';
+        document.getElementById('total-output-tokens').textContent = '0';
+        document.getElementById('claude-cost').textContent = '$0.00';
+        document.getElementById('gpt4-cost').textContent = '$0.00';
+        document.getElementById('cost-saved').textContent = '$0.00';
+        document.getElementById('savings-percent').textContent = '(0%)';
+    }
 }
 
 // Format numbers for display
 function formatNumber(num) {
-    return new Intl.NumberFormat().format(num);
-}
-
-// Update stats display
-function updateStats(inputTokens, outputTokens) {
-    document.getElementById('total-input-tokens').textContent = formatNumber(inputTokens);
-    document.getElementById('total-output-tokens').textContent = formatNumber(outputTokens);
-    const costSaved = calculateCostSavings(inputTokens, outputTokens);
-    document.getElementById('cost-saved').textContent = `$${costSaved.toFixed(2)}`;
-}
-
-// Format timestamp
-function formatTimestamp(timestamp) {
-    return new Date(timestamp).toLocaleTimeString();
+    return new Intl.NumberFormat().format(Math.round(num));
 }
 
 // Update history list
@@ -194,34 +222,339 @@ function updateCharts(requests) {
 async function fetchAndUpdateData() {
     try {
         // Fetch request history
-        const historyResponse = await fetch('/api/request_history');
+        const historyResponse = await fetch('/api/v1/history');
         const historyData = await historyResponse.json();
-        
-        // Update UI with history data
+
+        // Update visualizations
         updateHistoryList(historyData);
         updateCharts(historyData);
+
+        // Calculate and update token stats and costs
+        updateTokenStats(historyData);
+
+    } catch (error) {
+        console.error('Error fetching data:', error);
+    }
+}
+
+// Update token statistics and cost calculations
+function updateTokenStats(historyData) {
+    try {
+        if (!Array.isArray(historyData)) {
+            console.error('History data is not an array:', historyData);
+            setDefaultStats();
+            return;
+        }
 
         // Calculate total tokens from history data
         const totalTokens = historyData.reduce((sum, req) => sum + (req.tokens_used || 0), 0);
         const totalContextSize = historyData.reduce((sum, req) => sum + (req.context_size || 0), 0);
-        totalInputTokens = totalContextSize;
-        totalOutputTokens = totalTokens - totalContextSize;
-        updateStats(totalInputTokens, totalOutputTokens);
-
-        // Fetch average stats
-        const statsResponse = await fetch('/api/average_stats');
-        const statsData = await statsResponse.json();
+        const inputTokens = totalContextSize;
+        const outputTokens = totalTokens - totalContextSize;
         
-        // Additional stats processing if needed
+        console.log('Token stats:', { inputTokens, outputTokens, totalTokens, totalContextSize });
+        
+        // Update token counts
+        document.getElementById('total-input-tokens').textContent = formatNumber(inputTokens);
+        document.getElementById('total-output-tokens').textContent = formatNumber(outputTokens);
+        
+        // Calculate costs
+        const claudeInputCost = (inputTokens / 1_000_000) * 3;    // $3 per million input tokens
+        const claudeOutputCost = (outputTokens / 1_000_000) * 15;  // $15 per million output tokens
+        const claudeTotalCost = claudeInputCost + claudeOutputCost;
+        
+        const gpt4InputCost = (inputTokens / 1_000_000) * 2.5;    // $2.50 per million input tokens
+        const gpt4OutputCost = (outputTokens / 1_000_000) * 10;    // $10 per million output tokens
+        const gpt4TotalCost = gpt4InputCost + gpt4OutputCost;
+        
+        const savings = claudeTotalCost - gpt4TotalCost;
+        const savingsPercentage = claudeTotalCost > 0 ? (savings / claudeTotalCost) * 100 : 0;
+        
+        console.log('Cost calculations:', {
+            claudeInputCost,
+            claudeOutputCost,
+            claudeTotalCost,
+            gpt4InputCost,
+            gpt4OutputCost,
+            gpt4TotalCost,
+            savings,
+            savingsPercentage
+        });
+        
+        // Update costs display
+        document.getElementById('claude-cost').textContent = `$${claudeTotalCost.toFixed(2)}`;
+        document.getElementById('gpt4-cost').textContent = `$${gpt4TotalCost.toFixed(2)}`;
+        document.getElementById('cost-saved').textContent = `$${savings.toFixed(2)}`;
+        document.getElementById('savings-percent').textContent = 
+            `(${savingsPercentage > 0 ? '+' : ''}${savingsPercentage.toFixed(1)}%)`;
+        
     } catch (error) {
-        console.error('Error fetching data:', error);
+        console.error('Error updating token stats:', error);
+        setDefaultStats();
     }
+}
+
+// Set default values for stats
+function setDefaultStats() {
+    document.getElementById('total-input-tokens').textContent = '0';
+    document.getElementById('total-output-tokens').textContent = '0';
+    document.getElementById('claude-cost').textContent = '$0.00';
+    document.getElementById('gpt4-cost').textContent = '$0.00';
+    document.getElementById('cost-saved').textContent = '$0.00';
+    document.getElementById('savings-percent').textContent = '(0%)';
+}
+
+// Prompt Management
+let editor;
+let currentTemplate = null;
+let templates = [];
+
+function initializePromptManagement() {
+    // Initialize CodeMirror
+    editor = CodeMirror.fromTextArea(document.getElementById('template-editor'), {
+        mode: 'markdown',
+        theme: 'dracula',
+        lineNumbers: true,
+        lineWrapping: true,
+        extraKeys: {"Ctrl-Space": "autocomplete"}
+    });
+
+    // Load templates
+    loadTemplates();
+
+    // Add event listeners
+    document.getElementById('new-template-btn').addEventListener('click', createNewTemplate);
+    document.getElementById('save-template-btn').addEventListener('click', saveTemplate);
+    document.getElementById('preview-btn').addEventListener('click', togglePreview);
+    document.getElementById('add-variable-btn').addEventListener('click', addVariable);
+
+    // Add navigation listeners
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const view = btn.dataset.view;
+            showView(view);
+        });
+    });
+}
+
+function showView(viewName) {
+    // Hide all views
+    document.querySelectorAll('.view-container').forEach(view => {
+        view.style.display = 'none';
+    });
+    
+    // Show selected view
+    document.getElementById(`${viewName}-view`).style.display = 'block';
+    
+    // Update nav buttons
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.view === viewName);
+    });
+
+    // Refresh CodeMirror if showing prompts view
+    if (viewName === 'prompts' && editor) {
+        editor.refresh();
+    }
+}
+
+async function loadTemplates() {
+    try {
+        const response = await fetch('/api/v1/agent/prompts');
+        if (response.ok) {
+            templates = await response.json();
+            renderTemplatesList();
+        }
+    } catch (error) {
+        console.error('Error loading templates:', error);
+    }
+}
+
+function renderTemplatesList() {
+    const list = document.getElementById('templates-list');
+    list.innerHTML = '';
+    
+    templates.forEach(template => {
+        const li = document.createElement('li');
+        li.className = 'template-item';
+        li.innerHTML = `
+            <div class="template-info">
+                <h4>${template.name}</h4>
+                <p>${template.description || ''}</p>
+            </div>
+            <div class="template-actions">
+                <button class="secondary-btn edit-btn">Edit</button>
+                <button class="secondary-btn delete-btn">Delete</button>
+            </div>
+        `;
+        
+        // Add event listeners
+        li.querySelector('.edit-btn').addEventListener('click', () => editTemplate(template));
+        li.querySelector('.delete-btn').addEventListener('click', () => deleteTemplate(template));
+        
+        list.appendChild(li);
+    });
+}
+
+function createNewTemplate() {
+    currentTemplate = null;
+    document.getElementById('template-name').value = '';
+    editor.setValue('');
+    clearVariables();
+    hidePreview();
+}
+
+function editTemplate(template) {
+    currentTemplate = template;
+    document.getElementById('template-name').value = template.name;
+    editor.setValue(template.template);
+    renderVariables(template.variables || []);
+    hidePreview();
+}
+
+async function saveTemplate() {
+    const name = document.getElementById('template-name').value;
+    if (!name) {
+        alert('Please enter a template name');
+        return;
+    }
+
+    const template = {
+        name,
+        template: editor.getValue(),
+        variables: getVariables(),
+        model_id: '*',  // Apply to all models by default
+    };
+
+    try {
+        const url = '/api/v1/agent/prompts' + (currentTemplate ? `/${currentTemplate.id}` : '');
+        const method = currentTemplate ? 'PUT' : 'POST';
+        
+        const response = await fetch(url, {
+            method,
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(template)
+        });
+
+        if (response.ok) {
+            await loadTemplates();
+            alert(`Template ${currentTemplate ? 'updated' : 'created'} successfully!`);
+        }
+    } catch (error) {
+        console.error('Error saving template:', error);
+        alert('Error saving template');
+    }
+}
+
+async function deleteTemplate(template) {
+    if (!confirm(`Are you sure you want to delete template "${template.name}"?`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/v1/agent/prompts/${template.id}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            await loadTemplates();
+            if (currentTemplate && currentTemplate.id === template.id) {
+                createNewTemplate();
+            }
+        }
+    } catch (error) {
+        console.error('Error deleting template:', error);
+        alert('Error deleting template');
+    }
+}
+
+function addVariable() {
+    const variablesList = document.getElementById('variables-list');
+    const variableItem = document.createElement('div');
+    variableItem.className = 'variable-item';
+    variableItem.innerHTML = `
+        <input type="text" class="variable-name" placeholder="Variable name">
+        <input type="text" class="variable-default" placeholder="Default value">
+        <button class="secondary-btn remove-variable">×</button>
+    `;
+    
+    variableItem.querySelector('.remove-variable').addEventListener('click', () => {
+        variableItem.remove();
+    });
+    
+    variablesList.appendChild(variableItem);
+}
+
+function getVariables() {
+    const variables = [];
+    document.querySelectorAll('.variable-item').forEach(item => {
+        const name = item.querySelector('.variable-name').value;
+        const defaultValue = item.querySelector('.variable-default').value;
+        if (name) {
+            variables.push({ name, default: defaultValue });
+        }
+    });
+    return variables;
+}
+
+function renderVariables(variables) {
+    clearVariables();
+    variables.forEach(variable => {
+        const variableItem = document.createElement('div');
+        variableItem.className = 'variable-item';
+        variableItem.innerHTML = `
+            <input type="text" class="variable-name" value="${variable.name}" placeholder="Variable name">
+            <input type="text" class="variable-default" value="${variable.default || ''}" placeholder="Default value">
+            <button class="secondary-btn remove-variable">×</button>
+        `;
+        
+        variableItem.querySelector('.remove-variable').addEventListener('click', () => {
+            variableItem.remove();
+        });
+        
+        document.getElementById('variables-list').appendChild(variableItem);
+    });
+}
+
+function clearVariables() {
+    document.getElementById('variables-list').innerHTML = '';
+}
+
+function togglePreview() {
+    const previewPanel = document.querySelector('.preview-panel');
+    const isVisible = previewPanel.style.display !== 'none';
+    
+    if (isVisible) {
+        hidePreview();
+    } else {
+        showPreview();
+    }
+}
+
+function showPreview() {
+    const template = editor.getValue();
+    const variables = getVariables();
+    const preview = document.getElementById('preview-content');
+    
+    // Replace variables with their default values
+    let previewText = template;
+    variables.forEach(variable => {
+        const regex = new RegExp(`\\{${variable.name}\\}`, 'g');
+        previewText = previewText.replace(regex, variable.default || `[${variable.name}]`);
+    });
+    
+    preview.textContent = previewText;
+    document.querySelector('.preview-panel').style.display = 'block';
+}
+
+function hidePreview() {
+    document.querySelector('.preview-panel').style.display = 'none';
 }
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
     initializeCharts();
     fetchAndUpdateData();
+    
     // Refresh data every 30 seconds
     setInterval(fetchAndUpdateData, 30000);
 });

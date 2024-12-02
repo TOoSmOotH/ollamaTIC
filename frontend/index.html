@@ -6,6 +6,13 @@
     <title>Ollama Proxy Monitoring</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Add CodeMirror -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/dracula.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/xml/xml.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/markdown/markdown.js"></script>
 </head>
 <body class="dark-mode">
     <header>
@@ -18,9 +25,13 @@
             </label>
             <span>🌙</span>
         </div>
+        <nav class="main-nav">
+            <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+            <button class="nav-btn" data-view="prompts">Prompt Templates</button>
+        </nav>
     </header>
     <main>
-        <div class="dashboard-grid">
+        <div id="dashboard-view" class="view-container dashboard-grid">
             <section class="stats-card" id="token-stats">
                 <h2>Token Statistics</h2>
                 <div class="stat-group">
@@ -32,9 +43,25 @@
                         <h3>Total Output Tokens</h3>
                         <p id="total-output-tokens">0</p>
                     </div>
-                    <div class="stat-item">
-                        <h3>Estimated Cost Saved</h3>
-                        <p id="cost-saved">$0.00</p>
+                </div>
+                <div class="cost-comparison">
+                    <h3>Cost Comparison (24h)</h3>
+                    <div class="cost-grid">
+                        <div class="cost-item">
+                            <span class="cost-label">Claude Cost:</span>
+                            <span id="claude-cost" class="cost-value">$0.00</span>
+                            <span class="cost-detail">($3/M input, $15/M output)</span>
+                        </div>
+                        <div class="cost-item">
+                            <span class="cost-label">GPT-4 Cost:</span>
+                            <span id="gpt4-cost" class="cost-value">$0.00</span>
+                            <span class="cost-detail">($2.50/M input, $10/M output)</span>
+                        </div>
+                        <div class="cost-item savings">
+                            <span class="cost-label">Potential Savings:</span>
+                            <span id="cost-saved" class="cost-value highlight">$0.00</span>
+                            <span id="savings-percent" class="cost-detail">(0%)</span>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -58,6 +85,45 @@
                 <h2>Recent Requests</h2>
                 <div class="history-container">
                     <ul id="history-list"></ul>
+                </div>
+            </section>
+        </div>
+
+        <div id="prompts-view" class="view-container prompts-grid" style="display: none;">
+            <section class="templates-list">
+                <div class="templates-header">
+                    <h2>Prompt Templates</h2>
+                    <button id="new-template-btn" class="primary-btn">New Template</button>
+                </div>
+                <div class="templates-container">
+                    <ul id="templates-list"></ul>
+                </div>
+            </section>
+
+            <section class="template-editor">
+                <div class="editor-header">
+                    <input type="text" id="template-name" placeholder="Template Name" class="template-name-input">
+                    <div class="editor-actions">
+                        <button id="preview-btn" class="secondary-btn">Preview</button>
+                        <button id="save-template-btn" class="primary-btn">Save Template</button>
+                    </div>
+                </div>
+                <div class="editor-grid">
+                    <div class="editor-main">
+                        <h3>Template Content</h3>
+                        <textarea id="template-editor"></textarea>
+                    </div>
+                    <div class="variables-panel">
+                        <h3>Variables</h3>
+                        <div class="variables-list" id="variables-list">
+                            <!-- Variables will be added here dynamically -->
+                        </div>
+                        <button id="add-variable-btn" class="secondary-btn">Add Variable</button>
+                    </div>
+                </div>
+                <div class="preview-panel" style="display: none;">
+                    <h3>Preview</h3>
+                    <div id="preview-content" class="preview-content"></div>
                 </div>
             </section>
         </div>
