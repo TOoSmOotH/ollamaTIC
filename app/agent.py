@@ -68,14 +68,17 @@ class OllamaAgent:
             else:
                 chunk_str = chunk
                 
-            # Accumulate response for learning
-            accumulated_response += chunk_str
-            
-            # Forward the chunk
-            if isinstance(chunk, str):
-                yield chunk.encode('utf-8')
-            else:
-                yield chunk
+            try:
+                # Parse the JSON to validate it
+                json_obj = json.loads(chunk_str)
+                accumulated_response += json_obj.get('response', '')
+                
+                # Forward the validated JSON chunk
+                yield chunk_str.encode('utf-8')
+            except json.JSONDecodeError:
+                logger.error(f"Invalid JSON in chunk: {chunk_str}")
+            except Exception as e:
+                logger.error(f"Error processing chunk: {str(e)}")
         
         # Learn from the complete interaction after streaming is done
         if context.get("prompt"):

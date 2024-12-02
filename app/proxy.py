@@ -7,8 +7,10 @@ import time
 from app.metrics import MetricsCollector
 from app.config import get_settings
 from app.agent import OllamaAgent
+import logging
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 class OllamaProxy:
     def __init__(self):
@@ -96,7 +98,32 @@ class OllamaProxy:
     async def _stream_response(self, response) -> AsyncGenerator[bytes, None]:
         """Stream the response from Ollama server"""
         try:
+            buffer = ""
             async for chunk in response.aiter_bytes():
-                yield chunk
+                chunk_str = chunk.decode('utf-8')
+                buffer += chunk_str
+                
+                try:
+                    # Try to parse complete JSON objects from the buffer
+                    while True:
+                        try:
+                            # Find the end of the current JSON object
+                            json_end = buffer.index("}\n") + 1
+                            json_str = buffer[:json_end]
+                            
+                            # Parse and validate JSON
+                            json_obj = json.loads(json_str)
+                            
+                            # Yield the valid JSON object
+                            yield json_str.encode('utf-8')
+                            
+                            # Remove processed JSON from buffer
+                            buffer = buffer[json_end:]
+                        except ValueError:
+                            # No complete JSON object found
+                            break
+                except Exception as parse_error:
+                    logger.error(f"Error parsing JSON: {parse_error}")
+                    
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))

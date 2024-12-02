@@ -85,7 +85,7 @@ async def generate(request: Request):
 @api_router.post("/chat")
 async def chat(request: Request):
     """Forward chat requests to Ollama server"""
-    return await proxy.forward_request("/api/generate", request)
+    return await proxy.forward_request("/api/chat", request)
 
 # OpenAI-compatible endpoints
 @app.post("/v1/chat/completions")
