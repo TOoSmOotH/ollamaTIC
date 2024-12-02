@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.metrics import MetricsCollector
 from app.api.patterns import router as patterns_router
+from app.api.prompts import router as prompts_router
 
 # Load environment variables
 load_dotenv()
@@ -257,18 +258,21 @@ async def openai_chat_completions(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 # Monitoring endpoints
-@api_router.get("/v1/history")
+@api_router.get("/request_history")
 async def get_request_history():
     """Get request history with token counts and durations"""
     return metrics_collector.get_request_history()
 
-@api_router.get("/v1/average_stats")
+@api_router.get("/average_stats")
 async def average_stats():
     """Get average tokens used and average time requests took"""
     return metrics_collector.get_average_stats()
 
 # Include API router
 app.include_router(api_router)
+
+# Mount prompts router directly on app
+app.include_router(prompts_router, prefix="/agent/prompts")
 
 # Mount static files for the frontend AFTER all API routes
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")

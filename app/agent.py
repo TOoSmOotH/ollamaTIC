@@ -1,8 +1,3 @@
-"""
-OllamaTIC Agent - Enhances Ollama responses with continuous learning capabilities.
-The agent processes all requests, learning from interactions and improving responses over time.
-"""
-
 from typing import Dict, Any, AsyncGenerator, Optional
 import json
 from fastapi import Request
@@ -10,6 +5,7 @@ from pydantic import BaseModel
 import logging
 from datetime import datetime
 from app.learning import LearningSystem
+from app.prompt_template import PromptTemplate
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +26,7 @@ class OllamaAgent:
         self.interactions: list[Interaction] = []
         self.learning_system = LearningSystem()
         self.context_memory: Dict[str, Any] = {}
+        self.prompt_templates: Dict[str, PromptTemplate] = {}
 
     async def process_request(self, request: Request) -> Dict[str, Any]:
         """

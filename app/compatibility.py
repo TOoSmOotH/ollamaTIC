@@ -1,14 +1,9 @@
-"""
-Compatibility layer for ensuring transparent operation with Cline and other Ollama clients.
-This module handles the processing of requests and responses to maintain exact Ollama API format
-while allowing optional agent enhancement through different paths.
-"""
-
 from fastapi import Request, Response
 from typing import Optional, Dict, Any, Union
 import json
 from pydantic import BaseModel
 from app.config import get_settings
+from app.prompt_template import PromptTemplate
 
 settings = get_settings()
 
@@ -16,7 +11,6 @@ class AgentMode:
     """Constants for agent operation modes"""
     PASSIVE = "passive"
     ACTIVE = "active"
-
 
 class CompatibilityLayer:
     """
@@ -28,6 +22,7 @@ class CompatibilityLayer:
         self.settings = get_settings()
         # Load model-specific configurations
         self.model_configs = self.settings.model_configs or {}
+        self.prompt_templates = {}
 
     @staticmethod
     def is_agent_path(path: str) -> bool:
@@ -190,3 +185,23 @@ class CompatibilityLayer:
             pass
 
         return response
+
+    async def create_prompt_template(self, template: str, variables: List[str], model_id: str, language: Optional[str] = None, task_type: Optional[str] = None, priority: int = 1) -> PromptTemplate:
+        """
+        Create a new prompt template.
+        """
+        prompt_template = PromptTemplate(template=template, variables=variables, model_id=model_id, language=language, task_type=task_type, priority=priority)
+        self.prompt_templates[prompt_template.template] = prompt_template
+        return prompt_template
+
+    async def get_prompt_template(self, template: str) -> Optional[PromptTemplate]:
+        """
+        Retrieve a prompt template by its template string.
+        """
+        return self.prompt_templates.get(template)
+
+    async def list_prompt_templates(self) -> List[PromptTemplate]:
+        """
+        List all registered prompt templates.
+        """
+        return list(self.prompt_templates.values())

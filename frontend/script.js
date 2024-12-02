@@ -129,7 +129,7 @@ function initializeCharts() {
 async function updateStats() {
     try {
         // Fetch history data for token counts
-        const historyResponse = await fetch('/api/v1/history');
+        const historyResponse = await fetch('/api/request_history');
         const historyData = await historyResponse.json();
 
         // Calculate total tokens from history data
@@ -222,7 +222,7 @@ function updateCharts(requests) {
 async function fetchAndUpdateData() {
     try {
         // Fetch request history
-        const historyResponse = await fetch('/api/v1/history');
+        const historyResponse = await fetch('/api/request_history');
         const historyData = await historyResponse.json();
 
         // Update visualizations

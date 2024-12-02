@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ollama Proxy - Prompt Templates</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- Add CodeMirror -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/dracula.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/xml/xml.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/markdown/markdown.js"></script>
+</head>
+<body class="dark-mode">
+    <header>
+        <h1>Ollama Proxy Monitoring</h1>
+        <div class="theme-toggle-container">
+            <span>🌞</span>
+            <label class="switch">
+                <input type="checkbox" id="theme-toggle" checked>
+                <span class="slider round"></span>
+            </label>
+            <span>🌙</span>
+        </div>
+        <nav class="main-nav">
+            <a href="index.html" class="nav-btn">Dashboard</a>
+            <a href="prompt_management.html" class="nav-btn active">Prompt Templates</a>
+        </nav>
+    </header>
+    <main>
+        <div class="view-container prompts-grid">
+            <section class="templates-list">
+                <div class="templates-header">
+                    <h2>Prompt Templates</h2>
+                    <button id="new-template-btn" class="primary-btn">New Template</button>
+                </div>
+                <div class="templates-container">
+                    <ul id="templates-list"></ul>
+                </div>
+            </section>
+
+            <section class="template-editor">
+                <div class="editor-header">
+                    <input type="text" id="template-name" placeholder="Template Name" class="template-name-input">
+                    <div class="editor-actions">
+                        <button id="preview-btn" class="secondary-btn">Preview</button>
+                        <button id="save-template-btn" class="primary-btn">Save Template</button>
+                    </div>
+                </div>
+                <div class="editor-grid">
+                    <div class="editor-main">
+                        <h3>Template Content</h3>
+                        <textarea id="template-editor"></textarea>
+                    </div>
+                    <div class="variables-panel">
+                        <h3>Variables</h3>
+                        <div class="variables-list" id="variables-list">
+                            <!-- Variables will be added here dynamically -->
+                        </div>
+                        <button id="add-variable-btn" class="secondary-btn">Add Variable</button>
+                    </div>
+                </div>
+                <div class="preview-panel" style="display: none;">
+                    <h3>Preview</h3>
+                    <div id="preview-content" class="preview-content"></div>
+                </div>
+            </section>
+        </div>
+    </main>
+    <script src="script.js"></script>
+    <script src="prompt_management.js"></script>
+</body>
+</html>

@@ -27,7 +27,7 @@
         </div>
         <nav class="main-nav">
             <button class="nav-btn active" data-view="dashboard">Dashboard</button>
-            <button class="nav-btn" data-view="prompts">Prompt Templates</button>
+            <a href="prompt_management.html" class="nav-btn">Prompt Templates</a>
         </nav>
     </header>
     <main>
@@ -85,45 +85,6 @@
                 <h2>Recent Requests</h2>
                 <div class="history-container">
                     <ul id="history-list"></ul>
-                </div>
-            </section>
-        </div>
-
-        <div id="prompts-view" class="view-container prompts-grid" style="display: none;">
-            <section class="templates-list">
-                <div class="templates-header">
-                    <h2>Prompt Templates</h2>
-                    <button id="new-template-btn" class="primary-btn">New Template</button>
-                </div>
-                <div class="templates-container">
-                    <ul id="templates-list"></ul>
-                </div>
-            </section>
-
-            <section class="template-editor">
-                <div class="editor-header">
-                    <input type="text" id="template-name" placeholder="Template Name" class="template-name-input">
-                    <div class="editor-actions">
-                        <button id="preview-btn" class="secondary-btn">Preview</button>
-                        <button id="save-template-btn" class="primary-btn">Save Template</button>
-                    </div>
-                </div>
-                <div class="editor-grid">
-                    <div class="editor-main">
-                        <h3>Template Content</h3>
-                        <textarea id="template-editor"></textarea>
-                    </div>
-                    <div class="variables-panel">
-                        <h3>Variables</h3>
-                        <div class="variables-list" id="variables-list">
-                            <!-- Variables will be added here dynamically -->
-                        </div>
-                        <button id="add-variable-btn" class="secondary-btn">Add Variable</button>
-                    </div>
-                </div>
-                <div class="preview-panel" style="display: none;">
-                    <h3>Preview</h3>
-                    <div id="preview-content" class="preview-content"></div>
                 </div>
             </section>
         </div>
