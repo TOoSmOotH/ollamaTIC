@@ -234,6 +234,7 @@ async function fetchAndUpdateData() {
 
     } catch (error) {
         console.error('Error fetching data:', error);
+        setDefaultStats();
     }
 }
 
@@ -359,7 +360,7 @@ function showView(viewName) {
 
 async function loadTemplates() {
     try {
-        const response = await fetch('/api/v1/agent/prompts');
+        const response = await fetch('/api/v1/agent/templates');
         if (response.ok) {
             templates = await response.json();
             renderTemplatesList();
@@ -426,7 +427,7 @@ async function saveTemplate() {
     };
 
     try {
-        const url = '/api/v1/agent/prompts' + (currentTemplate ? `/${currentTemplate.id}` : '');
+        const url = '/api/v1/agent/templates' + (currentTemplate ? `/${currentTemplate.id}` : '');
         const method = currentTemplate ? 'PUT' : 'POST';
         
         const response = await fetch(url, {
@@ -451,7 +452,7 @@ async function deleteTemplate(template) {
     }
 
     try {
-        const response = await fetch(`/api/v1/agent/prompts/${template.id}`, {
+        const response = await fetch(`/api/v1/agent/templates/${template.id}`, {
             method: 'DELETE'
         });
 

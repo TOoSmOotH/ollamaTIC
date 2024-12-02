@@ -257,14 +257,9 @@ async def openai_chat_completions(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 # Monitoring endpoints
-@app.get("/api/v1/history")
+@api_router.get("/v1/history")
 async def get_request_history():
     """Get request history with token counts and durations"""
-    return metrics_collector.get_request_history()
-
-@api_router.get("/v1/request_history")
-async def request_history():
-    """Get request history"""
     return metrics_collector.get_request_history()
 
 @api_router.get("/v1/average_stats")
