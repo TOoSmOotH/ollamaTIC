@@ -10,16 +10,16 @@ Adding an intelligent agent system to OllamaTIC that can intercept and enhance O
   - Agent must be completely transparent to Cline
   - All API endpoints must maintain exact Ollama API format
   - No modification of response structure
-  - Optional agent activation via headers or query parameters
+  - Agent is always active to enhance all requests
 
 ### API Compatibility Layer
 - **Request Processing**
   ```python
   class CompatibilityLayer:
       def process_request(request: Request) -> Request:
-          # Check if agent should be activated
+          # Process all requests through the agent
           # Preserve all original request properties
-          # Add agent enhancements only if explicitly enabled
+          # Add agent enhancements for improved responses
           pass
 
       def process_response(response: Response) -> Response:
@@ -30,22 +30,19 @@ Adding an intelligent agent system to OllamaTIC that can intercept and enhance O
   ```
 
 ### Implementation Guidelines
-- All agent features must be opt-in
-- Zero impact on standard Ollama API calls
+- Agent enhancement is applied to all requests
+- Zero impact on standard Ollama API format
 - Maintain streaming response compatibility
-- Preserve all Cline-specific headers and metadata
+- Preserve all Cline-specific metadata
 
 ## 1. Agent Interceptor System
 
 ### Core Components
 - **AgentInterceptor Class**
   - Transparent middleware integration
-  - Optional activation via headers/parameters
-  - Zero-impact when disabled
-  - Preservation of original request/response format
-- **Pre-processing of incoming requests**
-  - Context management system
-  - Model-specific handling
+  - Always-on enhancement of requests
+  - Zero-impact on API format
+  - Preservation of original request/response structure
 
 ### Prompt Management System
 - **PromptTemplate Class**
@@ -75,27 +72,40 @@ Adding an intelligent agent system to OllamaTIC that can intercept and enhance O
 ## 2. Learning System
 
 ### Knowledge Base
-- **VectorStore**
-  - Code snippets
-  - Conversation histories
-  - Solution patterns
-  - Performance metrics
+- **ChromaDB Vector Store**
+  - Embeddings for code snippets and conversations
+  - Semantic search capabilities
+  - Efficient similarity matching
+  - Collection management for:
+    - Code snippets
+    - Conversation histories
+    - Solution patterns
+    - Performance metrics
 
 ### Learning Components
 - **ExperienceCollector**
   ```python
   class ExperienceCollector:
-      conversation_history: List[Conversation]
-      code_snippets: List[CodeSnippet]
-      performance_metrics: Dict[str, Metric]
-      feedback_data: List[Feedback]
+      def __init__(self):
+          self.chroma_client = chromadb.Client()
+          self.code_collection = self.chroma_client.create_collection("code_snippets")
+          self.conversation_collection = self.chroma_client.create_collection("conversations")
+          self.metrics_collection = self.chroma_client.create_collection("metrics")
+
+      async def store_experience(self, data: dict, collection_name: str):
+          # Store embeddings and metadata in appropriate ChromaDB collection
+          pass
+
+      async def query_similar_experiences(self, query: str, collection_name: str) -> List[dict]:
+          # Query ChromaDB for similar experiences
+          pass
   ```
 
 - **PatternRecognizer**
-  - Language patterns
-  - Common mistakes
-  - Successful solutions
-  - Anti-patterns
+  - Semantic pattern matching using ChromaDB
+  - Language-specific embeddings
+  - Context-aware similarity search
+  - Anti-pattern detection
 
 ### Metrics System
 - **Performance Tracking**
@@ -106,7 +116,7 @@ Adding an intelligent agent system to OllamaTIC that can intercept and enhance O
   - Learning curve analysis
 
 ### Implementation Steps
-1. Set up vector database
+1. Set up ChromaDB vector database
 2. Implement experience collection
 3. Create pattern recognition system
 4. Build metrics collection
@@ -115,7 +125,7 @@ Adding an intelligent agent system to OllamaTIC that can intercept and enhance O
 ## 3. Storage & Database
 
 ### Vector Database
-- **Technology**: Qdrant/Milvus
+- **Technology**: ChromaDB
 - **Collections**:
   - code_snippets
   - conversation_history
@@ -130,7 +140,7 @@ Adding an intelligent agent system to OllamaTIC that can intercept and enhance O
   - Performance logs
 
 ### Implementation Steps
-1. Set up vector database
+1. Set up ChromaDB vector database
 2. Create database schemas
 3. Implement data access layer
 4. Add backup/restore functionality
@@ -168,15 +178,6 @@ Adding an intelligent agent system to OllamaTIC that can intercept and enhance O
 
 ## 5. API Enhancements
 
-### Compatibility Headers
-```typescript
-interface CompatibilityHeaders {
-  'X-Agent-Enable': boolean;        // Enable/disable agent enhancement
-  'X-Agent-Mode': 'passive'|'active'; // Control agent interaction level
-  'X-Agent-Features': string[];     // Specific features to enable
-}
-```
-
 ### New Endpoints
 ```typescript
 // All new endpoints are prefixed with /agent to maintain separation
@@ -198,10 +199,9 @@ interface AgentAPI {
 
 ### Implementation Steps
 1. Design API specifications with compatibility in mind
-2. Implement header-based feature activation
-3. Add separate agent-specific endpoints
-4. Create API documentation emphasizing Cline compatibility
-5. Add comprehensive compatibility tests
+2. Implement separate agent-specific endpoints
+3. Create API documentation emphasizing Cline compatibility
+4. Add comprehensive compatibility tests
 
 ## 6. Integration & Optimization
 
@@ -299,7 +299,7 @@ interface AgentAPI {
 - Create initial storage system
 
 ### Phase 2: Learning System (Weeks 3-4)
-- Implement vector database
+- Implement ChromaDB vector database
 - Create experience collector
 - Add basic metrics
 

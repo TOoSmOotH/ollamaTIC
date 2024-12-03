@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ollama Proxy - RAG Management</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Add CodeMirror -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/dracula.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/xml/xml.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/markdown/markdown.js"></script>
+</head>
+<body class="dark-mode">
+    <header>
+        <h1>Ollama Proxy Monitoring</h1>
+        <div class="theme-toggle-container">
+            <span>🌞</span>
+            <label class="switch">
+                <input type="checkbox" id="theme-toggle" checked>
+                <span class="slider round"></span>
+            </label>
+            <span>🌙</span>
+        </div>
+        <nav class="main-nav">
+            <a href="index.html" class="nav-btn">Dashboard</a>
+            <a href="prompts.html" class="nav-btn">Prompt Templates</a>
+            <a href="rag.html" class="nav-btn active">RAG Management</a>
+        </nav>
+    </header>
+    <main>
+        <div id="rag-view" class="view-container dashboard-grid">
+            <!-- Collections Overview -->
+            <section class="stats-card" id="collections-overview">
+                <h2>Collections Overview</h2>
+                <div class="stat-group" id="collections-grid">
+                    <!-- Dynamically populated -->
+                </div>
+            </section>
+
+            <!-- Search Interface -->
+            <section class="chart-card">
+                <h2>Search Collections</h2>
+                <div class="search-controls">
+                    <select id="collection-select" class="select-input">
+                        <option value="">Select Collection</option>
+                    </select>
+                    <input type="text" id="search-query" class="text-input" placeholder="Enter search query">
+                    <button onclick="searchCollection()" class="primary-btn">Search</button>
+                </div>
+                <div id="search-results" class="results-container">
+                    <!-- Dynamically populated -->
+                </div>
+            </section>
+
+            <!-- Learning Insights -->
+            <section class="chart-card">
+                <h2>Learning Insights</h2>
+                <div class="chart-controls">
+                    <button class="chart-tab active" onclick="showTab('patterns')">Patterns</button>
+                    <button class="chart-tab" onclick="showTab('errors')">Errors</button>
+                    <button class="chart-tab" onclick="showTab('metrics')">Metrics</button>
+                </div>
+                <div id="insights-content" class="insights-content">
+                    <!-- Dynamically populated -->
+                </div>
+            </section>
+
+            <!-- Data Management -->
+            <section class="history-card">
+                <h2>Data Management</h2>
+                <div class="management-controls">
+                    <div class="control-group">
+                        <h3>Clean Collection</h3>
+                        <div class="input-group">
+                            <select id="clean-collection-select" class="select-input">
+                                <option value="">Select Collection</option>
+                            </select>
+                            <input type="number" id="older-than-days" class="number-input" placeholder="Older than (days)">
+                            <input type="number" id="min-score" class="number-input" placeholder="Min score" step="0.1" min="0" max="1">
+                            <button onclick="cleanCollection()" class="primary-btn">Clean</button>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <h3>Export/Import</h3>
+                        <div class="input-group">
+                            <select id="export-collection-select" class="select-input">
+                                <option value="">Select Collection</option>
+                            </select>
+                            <button onclick="exportCollection()" class="secondary-btn">Export</button>
+                            <button onclick="importCollection()" class="secondary-btn">Import</button>
+                            <input type="file" id="import-file" style="display: none">
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script>
+        // Theme toggle functionality
+        const themeToggle = document.getElementById('theme-toggle');
+        themeToggle.addEventListener('change', () => {
+            document.body.classList.toggle('dark-mode');
+        });
+
+        // Fetch and display collections
+        async function fetchCollections() {
+            try {
+                const response = await fetch('/agent/rag/collections');
+                const collections = await response.json();
+                
+                const grid = document.getElementById('collections-grid');
+                grid.innerHTML = collections.map(collection => `
+                    <div class="stat-item">
+                        <h3>${collection.name}</h3>
+                        <p class="stat-value">${collection.count}</p>
+                        <div class="stat-details">
+                            <span>Dimension: ${collection.embedding_dimension}</span>
+                            <span>Updated: ${new Date(collection.last_updated).toLocaleDateString()}</span>
+                        </div>
+                    </div>
+                `).join('');
+
+                // Update collection selects
+                const selects = ['collection-select', 'clean-collection-select', 'export-collection-select'];
+                selects.forEach(id => {
+                    const select = document.getElementById(id);
+                    select.innerHTML = '<option value="">Select Collection</option>' +
+                        collections.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+                });
+            } catch (error) {
+                console.error('Error fetching collections:', error);
+            }
+        }
+
+        // Search collection
+        async function searchCollection() {
+            const collection = document.getElementById('collection-select').value;
+            const query = document.getElementById('search-query').value;
+            
+            if (!collection || !query) return;
+
+            try {
+                const response = await fetch(`/agent/rag/search/${collection}?query=${encodeURIComponent(query)}`);
+                const results = await response.json();
+                
+                const resultsDiv = document.getElementById('search-results');
+                resultsDiv.innerHTML = results.map(result => `
+                    <div class="result-item">
+                        <div class="result-content">
+                            <pre>${result.content}</pre>
+                        </div>
+                        <div class="result-meta">
+                            <span class="score">Score: ${result.score.toFixed(3)}</span>
+                            <details>
+                                <summary>Metadata</summary>
+                                <pre class="metadata">${JSON.stringify(result.metadata, null, 2)}</pre>
+                            </details>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error searching collection:', error);
+            }
+        }
+
+        // Fetch and display insights
+        async function fetchInsights() {
+            try {
+                const response = await fetch('/agent/rag/insights');
+                const insights = await response.json();
+                
+                const insightsDiv = document.getElementById('insights-content');
+                insightsDiv.innerHTML = insights.map(insight => `
+                    <div class="insight-item">
+                        <div class="insight-header">
+                            <h3>${insight.pattern_type}</h3>
+                            <div class="insight-stats">
+                                <span class="frequency">Frequency: ${insight.frequency}</span>
+                                <span class="success-rate">Success: ${(insight.success_rate * 100).toFixed(1)}%</span>
+                            </div>
+                        </div>
+                        <details>
+                            <summary>Examples</summary>
+                            <pre class="examples">${insight.examples.join('\n')}</pre>
+                        </details>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error fetching insights:', error);
+            }
+        }
+
+        // Clean collection
+        async function cleanCollection() {
+            const collection = document.getElementById('clean-collection-select').value;
+            const days = document.getElementById('older-than-days').value;
+            const score = document.getElementById('min-score').value;
+            
+            if (!collection) return;
+
+            try {
+                const response = await fetch(`/agent/rag/clean/${collection}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ older_than_days: days, min_score: score })
+                });
+                const result = await response.json();
+                alert(result.message);
+                fetchCollections();
+            } catch (error) {
+                console.error('Error cleaning collection:', error);
+            }
+        }
+
+        // Export collection
+        async function exportCollection() {
+            const collection = document.getElementById('export-collection-select').value;
+            if (!collection) return;
+
+            try {
+                const response = await fetch(`/agent/rag/export/${collection}`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${collection}_export.json`;
+                a.click();
+                window.URL.revokeObjectURL(url);
+            } catch (error) {
+                console.error('Error exporting collection:', error);
+            }
+        }
+
+        // Import collection
+        async function importCollection() {
+            document.getElementById('import-file').click();
+        }
+
+        // Handle file import
+        document.getElementById('import-file').addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const collection = document.getElementById('export-collection-select').value;
+            if (!collection) {
+                alert('Please select a collection first');
+                return;
+            }
+
+            try {
+                const data = await file.text();
+                const response = await fetch(`/agent/rag/import/${collection}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: data
+                });
+                const result = await response.json();
+                alert(result.message);
+                fetchCollections();
+            } catch (error) {
+                console.error('Error importing collection:', error);
+            }
+        });
+
+        // Show tab content
+        function showTab(tab) {
+            const buttons = document.querySelectorAll('.chart-tab');
+            buttons.forEach(btn => btn.classList.remove('active'));
+            document.querySelector(`[onclick="showTab('${tab}')"]`).classList.add('active');
+            
+            if (tab === 'patterns' || tab === 'errors') {
+                fetchInsights();
+            } else if (tab === 'metrics') {
+                // TODO: Implement metrics visualization with Chart.js
+                const ctx = document.getElementById('insights-content');
+                ctx.innerHTML = '<canvas id="metrics-chart"></canvas>';
+                // Add metrics chart implementation here
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchCollections();
+            fetchInsights();
+        });
+    </script>
+    <script src="script.js"></script>
+    <script src="rag.js"></script>
+</body>
+</html>
