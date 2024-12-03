@@ -4,7 +4,7 @@ Vector database operations for storing and retrieving embeddings using ChromaDB.
 
 import json
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import numpy as np
 import chromadb
 from chromadb.config import Settings
@@ -43,6 +43,7 @@ class VectorStore:
         self.encoder = sentence_transformers.SentenceTransformer('all-MiniLM-L6-v2')
         
         # Initialize collections
+        logger.info("Initializing vector store collections")
         self._init_collections()
     
     def _init_collections(self):
@@ -85,6 +86,9 @@ class VectorStore:
                           language: str, 
                           metadata: Optional[Dict[str, Any]] = None) -> str:
         """Store a code snippet with its metadata."""
+        logger.info(f"Storing code snippet for language: {language}")
+        logger.debug(f"Code snippet (first 100 chars): {code[:100]}...")
+        
         if metadata is None:
             metadata = {}
             
@@ -108,6 +112,9 @@ class VectorStore:
                           messages: List[Dict[str, str]], 
                           metadata: Optional[Dict[str, Any]] = None) -> str:
         """Store a conversation history."""
+        logger.info("Storing conversation history")
+        logger.debug(f"Number of messages: {len(messages)}")
+        
         if metadata is None:
             metadata = {}
             
@@ -138,6 +145,9 @@ class VectorStore:
                      pattern_type: str,
                      language: str) -> str:
         """Store a learned pattern."""
+        logger.info(f"Storing {pattern_type} pattern for language: {language}")
+        logger.debug(f"Pattern: {pattern}")
+        
         # Convert pattern to string for embedding
         pattern_text = json.dumps(pattern)
         
@@ -162,12 +172,15 @@ class VectorStore:
                            language: Optional[str] = None,
                            limit: int = 5) -> List[Dict[str, Any]]:
         """Search for similar code snippets."""
-        where = {"language": language} if language else None
+        logger.info(f"Searching code snippets for query: {query}")
+        logger.debug(f"Language filter: {language}")
+        
+        where_conditions = {"language": {"$eq": language}} if language else None
         
         results = self.code_snippets.query(
             query_embeddings=[self._encode_text(query)],
             n_results=limit,
-            where=where
+            where=where_conditions
         )
         
         return [
@@ -189,6 +202,8 @@ class VectorStore:
                            query: str,
                            limit: int = 5) -> List[Dict[str, Any]]:
         """Search for similar conversations."""
+        logger.info(f"Searching conversations for query: {query}")
+        
         results = self.conversations.query(
             query_embeddings=[self._encode_text(query)],
             n_results=limit
@@ -216,18 +231,27 @@ class VectorStore:
                        language: Optional[str] = None,
                        limit: int = 5) -> List[Dict[str, Any]]:
         """Search for similar patterns."""
-        where = {}
-        if pattern_type:
-            where["type"] = pattern_type
-        if language:
-            where["language"] = language
-            
-        where = where if where else None
+        logger.info(f"Searching patterns for query: {query}")
+        logger.debug(f"Pattern type filter: {pattern_type}, Language filter: {language}")
+        
+        # Build where clause conditions
+        where_conditions = {}
+        if pattern_type and language:
+            where_conditions = {
+                "$and": [
+                    {"type": {"$eq": pattern_type}},
+                    {"language": {"$eq": language}}
+                ]
+            }
+        elif pattern_type:
+            where_conditions = {"type": {"$eq": pattern_type}}
+        elif language:
+            where_conditions = {"language": {"$eq": language}}
         
         results = self.patterns.query(
             query_embeddings=[self._encode_text(query)],
             n_results=limit,
-            where=where
+            where=where_conditions if where_conditions else None
         )
         
         return [
@@ -247,6 +271,8 @@ class VectorStore:
     
     def get_collection_stats(self) -> Dict[str, Dict[str, Any]]:
         """Get statistics about the collections."""
+        logger.info("Retrieving collection statistics")
+        
         return {
             "code_snippets": {
                 "count": self.code_snippets.count(),
@@ -264,3 +290,134 @@ class VectorStore:
                 "metadata": self.patterns.metadata
             }
         }
+    
+    def list_collections(self) -> List[str]:
+        """List all available collections."""
+        logger.info("Listing available collections")
+        
+        return list(self.COLLECTIONS.keys())
+    
+    def get_collection_count(self, collection_name: str) -> int:
+        """Get the number of items in a collection."""
+        logger.info(f"Retrieving count for collection: {collection_name}")
+        
+        collection = getattr(self, f"_{collection_name}")
+        return collection.count()
+    
+    def get_embedding_dimension(self, collection_name: str) -> int:
+        """Get the embedding dimension of a collection."""
+        logger.info(f"Retrieving embedding dimension for collection: {collection_name}")
+        
+        # MiniLM-L6-v2 has 384 dimensions
+        return 384
+    
+    def get_last_update_time(self, collection_name: str) -> datetime:
+        """Get the last update time of a collection."""
+        logger.info(f"Retrieving last update time for collection: {collection_name}")
+        
+        collection = getattr(self, f"_{collection_name}")
+        # Get all items
+        result = collection.get()
+        
+        if result and result['metadatas']:
+            # Find the most recent timestamp
+            timestamps = [
+                datetime.fromisoformat(meta['timestamp'])
+                for meta in result['metadatas']
+                if 'timestamp' in meta
+            ]
+            if timestamps:
+                return max(timestamps)
+        
+        return datetime.now()
+    
+    def search(self, collection_name: str, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """Search within a specific collection."""
+        logger.info(f"Searching collection: {collection_name} for query: {query}")
+        
+        collection = getattr(self, f"_{collection_name}")
+        query_embedding = self._encode_text(query)
+        
+        results = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=limit
+        )
+        
+        output = []
+        if results['ids']:
+            for i in range(len(results['ids'][0])):
+                output.append({
+                    "content": results['documents'][0][i] if 'documents' in results else "No content available",
+                    "metadata": results['metadatas'][0][i],
+                    "score": float(results['distances'][0][i]) if 'distances' in results else 0.0
+                })
+        return output
+    
+    def clean_collection(self, collection_name: str, older_than_days: Optional[int] = None, 
+                        min_score: Optional[float] = None) -> int:
+        """Clean up a collection based on age or quality criteria."""
+        logger.info(f"Cleaning collection: {collection_name}")
+        
+        collection = getattr(self, f"_{collection_name}")
+        where_clause = {}
+        
+        if older_than_days:
+            cutoff_date = (datetime.now() - timedelta(days=older_than_days)).isoformat()
+            where_clause["timestamp"] = {"$lt": cutoff_date}
+            
+        # Get IDs to remove
+        results = collection.get(where=where_clause)
+        if not results['ids']:
+            return 0
+            
+        # Apply score filter if specified
+        ids_to_remove = []
+        if min_score is not None:
+            for i, metadata in enumerate(results['metadatas']):
+                if metadata.get('success_rate', 0) < min_score:
+                    ids_to_remove.append(results['ids'][i])
+        else:
+            ids_to_remove = results['ids']
+        
+        if ids_to_remove:
+            collection.delete(ids=ids_to_remove)
+        
+        return len(ids_to_remove)
+    
+    def export_collection(self, collection_name: str) -> Dict[str, Any]:
+        """Export a collection's data."""
+        logger.info(f"Exporting collection: {collection_name}")
+        
+        collection = getattr(self, f"_{collection_name}")
+        results = collection.get()
+        
+        return {
+            "name": collection_name,
+            "description": self.COLLECTIONS[collection_name],
+            "timestamp": datetime.now().isoformat(),
+            "data": {
+                "ids": results['ids'],
+                "embeddings": results['embeddings'],
+                "metadatas": results['metadatas'],
+                "documents": results.get('documents', [])
+            }
+        }
+    
+    def import_collection(self, collection_name: str, data: Dict[str, Any]) -> None:
+        """Import data into a collection."""
+        logger.info(f"Importing data into collection: {collection_name}")
+        
+        collection = getattr(self, f"_{collection_name}")
+        
+        # Validate the data structure
+        required_keys = ["ids", "embeddings", "metadatas"]
+        if not all(key in data["data"] for key in required_keys):
+            raise ValueError("Invalid data format")
+        
+        # Add the data to the collection
+        collection.add(
+            ids=data["data"]["ids"],
+            embeddings=data["data"]["embeddings"],
+            metadatas=data["data"]["metadatas"],
+            documents=data["data"].get("documents", [])
+        )

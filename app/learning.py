@@ -12,7 +12,9 @@ from collections import defaultdict
 import numpy as np
 from dataclasses import dataclass, field
 from .vector_store import VectorStore
+import logging
 
+logger = logging.getLogger(__name__)
 
 @dataclass
 class CodeBlock:
@@ -40,88 +42,186 @@ class LearningSystem:
     Core learning system that analyzes interactions and improves responses.
     """
     def __init__(self, vector_store: Optional[VectorStore] = None):
+        logger.info("Initializing learning system")
         self.language_patterns: Dict[str, LanguagePatterns] = {}
         self.context_memory: Dict[str, Dict[str, Any]] = {}
         self.code_block_regex = re.compile(r'```(\w+)?\n(.*?)\n```', re.DOTALL)
         self.vector_store = vector_store or VectorStore()
+        self._load_patterns()
         
+    def _load_patterns(self):
+        """Load patterns from vector store on startup"""
+        logger.info("Loading patterns from vector store")
+        patterns = self.vector_store.search_patterns(
+            query="",  # Empty query to get all patterns
+            pattern_type="language_patterns",
+            limit=100  # Get all patterns
+        )
+        
+        for pattern_data in patterns:
+            language = pattern_data.get("language")
+            pattern = pattern_data.get("pattern", {})
+            if language and pattern:
+                if language not in self.language_patterns:
+                    self.language_patterns[language] = LanguagePatterns(language=language)
+                
+                lang_patterns = self.language_patterns[language]
+                # Update pattern dictionaries with stored values
+                lang_patterns.common_imports.update(pattern.get("common_imports", {}))
+                lang_patterns.function_patterns.update(pattern.get("function_patterns", {}))
+                lang_patterns.error_patterns.update(pattern.get("error_patterns", {}))
+                lang_patterns.best_practices.update(pattern.get("best_practices", {}))
+                
     def analyze_interaction(
         self,
-        prompt: str,
-        response: str,
-        model: str,
-        context: Dict[str, Any]
+        interaction: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Analyze an interaction to extract patterns and learning points.
+        
+        Args:
+            interaction: Dictionary containing interaction details with keys:
+                - prompt: The input prompt
+                - response: The model's response
+                - model: The model used
+                - context: Additional context dictionary
+                - language: The programming language
+                - code: The code snippet
+                - error: The error message
+                - query: The query string
         """
+        # Validate required fields
+        if not isinstance(interaction, dict):
+            logger.warning("Invalid interaction data: expected dictionary")
+            return {"error": "Invalid interaction data format"}
+            
+        prompt = interaction.get('prompt')
+        response = interaction.get('response')
+        
+        if not prompt or not response:
+            logger.warning("Invalid interaction data: missing prompt or response")
+            return {"error": "Missing required fields: prompt and response"}
+            
+        # Get optional fields with defaults
+        model = interaction.get('model', 'unknown')
+        context = interaction.get('context', {})
+        language = interaction.get('language', '')
+        code = interaction.get('code', '')
+        error = interaction.get('error', '')
+        query = interaction.get('query', '')
+        
+        logger.info(f"Analyzing interaction for model: {model}")
+        
         # Extract code blocks from prompt and response
         prompt_code_blocks = self._extract_code_blocks(prompt)
         response_code_blocks = self._extract_code_blocks(response)
-        
+            
+        logger.debug(f"Found {len(prompt_code_blocks)} code blocks in prompt")
+        logger.debug(f"Found {len(response_code_blocks)} code blocks in response")
+            
         # Identify programming languages involved
-        languages = set(block.language for block in prompt_code_blocks + response_code_blocks)
-        
+        languages = set(block.language for block in prompt_code_blocks + response_code_blocks if block.language != "unknown")
+        logger.info(f"Detected languages: {languages}")
+            
         learning_results = {
             "languages": list(languages),
-            "patterns_found": [],
-            "improvements": []
+            "patterns_found": []
         }
-        
-        for language in languages:
-            # Initialize language patterns if not exists
-            if language not in self.language_patterns:
-                self.language_patterns[language] = LanguagePatterns(language=language)
-            
-            # Analyze and update patterns
-            patterns = self._analyze_language_patterns(
-                language,
-                prompt_code_blocks,
-                response_code_blocks
-            )
-            learning_results["patterns_found"].extend(patterns)
-            
+
+        # If we have code blocks, analyze them
+        if prompt_code_blocks or response_code_blocks:
+            # Analyze each language's patterns
+            for lang in languages:
+                if lang not in self.language_patterns:
+                    self.language_patterns[lang] = LanguagePatterns(language=lang)
+                
+                # Analyze patterns for this language
+                patterns_found = self._analyze_language_patterns(
+                    lang,
+                    prompt_code_blocks,
+                    response_code_blocks
+                )
+                learning_results["patterns_found"].extend(patterns_found)
+                
+                # Store updated patterns in vector store
+                pattern_data = {
+                    "language": lang,
+                    "common_imports": dict(self.language_patterns[lang].common_imports),
+                    "function_patterns": dict(self.language_patterns[lang].function_patterns),
+                    "error_patterns": dict(self.language_patterns[lang].error_patterns),
+                    "best_practices": dict(self.language_patterns[lang].best_practices)
+                }
+                
+                # Store pattern with metadata
+                self.vector_store.store_pattern(
+                    pattern=pattern_data,
+                    pattern_type="language_patterns",
+                    language=lang
+                )
+                
+                logger.info(f"Stored patterns for language: {lang}")
+                
             # Store code blocks in vector store
             for block in response_code_blocks:
-                if block.language == language:
-                    self.vector_store.store_code_snippet(
-                        code=block.code,
-                        language=language,
-                        metadata={
-                            "context": block.context,
-                            "success_rate": block.success_rate,
-                            "usage_count": block.usage_count,
-                            "model": model,
-                            "timestamp": datetime.now().isoformat()
-                        }
-                    )
+                if block.language == "unknown":
+                    continue
+                    
+                logger.debug(f"Storing code block for {block.language}")
+                self.vector_store.store_code_snippet(
+                    code=block.code,
+                    language=block.language,
+                    metadata={
+                        "context": block.context,
+                        "success_rate": block.success_rate,
+                        "usage_count": block.usage_count,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                )
+                
+            return learning_results
+        
+        # If we have explicit language and code but no code blocks
+        if language and code:
+            # Initialize pattern structure
+            pattern = {
+                "language": language,
+                "common_imports": {},
+                "function_patterns": {},
+                "error_patterns": {},
+                "best_practices": {}
+            }
             
-            # Store learned patterns
-            patterns = self.language_patterns[language]
+            # Extract imports
+            imports = self._extract_imports(language, code)
+            if imports:
+                pattern["common_imports"].update(imports)
+                
+            # Extract function patterns
+            functions = self._extract_function_patterns(language, code)
+            if functions:
+                pattern["function_patterns"].update(functions)
+                
+            # Record error patterns
+            if error:
+                error_key = self._simplify_error_message(error)
+                if error_key:
+                    pattern["error_patterns"][error_key] = {
+                        "count": 1,
+                        "last_seen": datetime.now().isoformat(),
+                        "example": error
+                    }
+                    
+            # Store the pattern
             self.vector_store.store_pattern(
-                pattern={
-                    "common_imports": dict(patterns.common_imports),
-                    "function_patterns": dict(patterns.function_patterns),
-                    "error_patterns": patterns.error_patterns,
-                    "best_practices": dict(patterns.best_practices)
-                },
+                pattern=pattern,
                 pattern_type="language_patterns",
                 language=language
             )
-        
-        # Store the conversation for context learning
-        self.vector_store.store_conversation(
-            messages=[
-                {"role": "user", "content": prompt},
-                {"role": "assistant", "content": response}
-            ],
-            metadata={
-                "model": model,
-                "languages": list(languages),
-                "context": context
-            }
-        )
-        
+            
+            learning_results["languages"].append(language)
+            return learning_results
+            
+        # No code blocks or explicit code found
         return learning_results
 
     def enhance_prompt(
@@ -133,6 +233,8 @@ class LearningSystem:
         """
         Enhance a prompt using learned patterns and similar examples.
         """
+        logger.info(f"Enhancing prompt for model: {model}")
+        
         # Extract code blocks to identify languages
         code_blocks = self._extract_code_blocks(prompt)
         languages = set(block.language for block in code_blocks)
@@ -202,6 +304,7 @@ class LearningSystem:
         """
         Extract code blocks from text and analyze their context.
         """
+        logger.debug("Extracting code blocks")
         blocks = []
         matches = self.code_block_regex.finditer(text)
         
@@ -231,6 +334,7 @@ class LearningSystem:
         """
         Analyze code blocks to identify and learn patterns for a specific language.
         """
+        logger.info(f"Analyzing patterns for language: {language}")
         patterns_found = []
         patterns = self.language_patterns[language]
         
@@ -267,6 +371,7 @@ class LearningSystem:
         """
         Extract import statements based on language.
         """
+        logger.debug(f"Extracting imports for language: {language}")
         imports = []
         if language == "python":
             # Match Python imports including from imports
@@ -309,6 +414,7 @@ class LearningSystem:
         """
         Extract function patterns based on language.
         """
+        logger.debug(f"Extracting function patterns for language: {language}")
         patterns = []
         if language == "python":
             # Match Python function definitions including async, decorators, and type hints
@@ -362,6 +468,7 @@ class LearningSystem:
         """
         Update success metrics for code blocks and patterns.
         """
+        logger.info(f"Updating success metrics for language: {language}")
         if language in self.language_patterns:
             patterns = self.language_patterns[language]
             
@@ -377,6 +484,7 @@ class LearningSystem:
                 )
                 
                 # Store updated metrics in vector store
+                logger.debug(f"Storing updated metrics for code block: {key}")
                 self.vector_store.store_code_snippet(
                     code=block.code,
                     language=language,
@@ -396,6 +504,7 @@ class LearningSystem:
                     patterns.error_patterns[error_pattern] = code_block
                     
                     # Store error pattern
+                    logger.debug(f"Storing error pattern: {error_pattern}")
                     self.vector_store.store_pattern(
                         pattern={
                             "error": error_pattern,
@@ -409,8 +518,43 @@ class LearningSystem:
         """
         Create a simplified pattern from an error message.
         """
+        logger.debug("Simplifying error message")
         # Remove specific file paths, line numbers, and variable names
         simplified = re.sub(r'File ".*?"', 'File "..."', error_message)
         simplified = re.sub(r'line \d+', 'line X', simplified)
         simplified = re.sub(r'"\w+"', '"..."', simplified)
         return simplified
+
+    def store_pattern(self, pattern_type: str, pattern: dict, metadata: Optional[dict] = None):
+        """Store a pattern in the vector store"""
+        try:
+            if not pattern:
+                logger.warning("Attempted to store empty pattern")
+                return
+                
+            # Ensure pattern has required fields
+            if "language" not in pattern:
+                logger.warning("Pattern missing language field")
+                return
+                
+            # Initialize metadata if not provided
+            if metadata is None:
+                metadata = {}
+                
+            # Add timestamp and language to metadata
+            metadata.update({
+                "timestamp": datetime.now().isoformat(),
+                "language": pattern["language"],
+                "pattern_type": pattern_type
+            })
+            
+            # Store pattern with metadata
+            self.vector_store.store_pattern(
+                pattern=pattern,
+                pattern_type=pattern_type,
+                metadata=metadata
+            )
+            logger.debug(f"Stored {pattern_type} pattern for {pattern['language']}")
+            
+        except Exception as e:
+            logger.error(f"Error storing pattern: {str(e)}")

@@ -23,6 +23,7 @@ class OllamaProxy:
         self,
         endpoint: str,
         request: Optional[Request],
+        context: Optional[Dict[str, Any]] = None
     ) -> Any:
         """
         Forward a request to the Ollama server and collect metrics.
@@ -37,8 +38,8 @@ class OllamaProxy:
             # Get the request method
             method = request.method.lower()
             
-            # Process request through agent
-            body, context = await self.agent.process_request(request)
+            # Process request through agent with context
+            body, agent_context = await self.agent.process_request(request, context)
             
             # Ensure model is set for POST requests
             if method == "post" and 'model' not in body:
@@ -71,7 +72,7 @@ class OllamaProxy:
                     return StreamingResponse(
                         self.agent.process_response(
                             self._stream_response(response),
-                            context
+                            agent_context
                         ),
                         media_type="text/event-stream"
                     )
@@ -80,7 +81,7 @@ class OllamaProxy:
                     json_response = response.json()
                     # Process through agent if it's a completion response
                     if isinstance(json_response, dict) and "response" in json_response:
-                        json_response = await self.agent.process_single_response(json_response, context)
+                        json_response = await self.agent.process_single_response(json_response, agent_context)
                     return JSONResponse(content=json_response)
 
             except HTTPError as e:
@@ -102,6 +103,7 @@ class OllamaProxy:
             async for chunk in response.aiter_bytes():
                 chunk_str = chunk.decode('utf-8')
                 buffer += chunk_str
+                logger.debug(f"Received raw chunk: {chunk_str}")
                 
                 try:
                     # Try to parse complete JSON objects from the buffer
@@ -113,8 +115,19 @@ class OllamaProxy:
                             
                             # Parse and validate JSON
                             json_obj = json.loads(json_str)
+                            logger.debug(f"Parsed JSON object: {json_obj}")
                             
+                            # For final messages with empty content, preserve the metadata
+                            if 'choices' in json_obj and json_obj['choices']:
+                                choice = json_obj['choices'][0]
+                                if choice.get('finish_reason') == 'stop' and 'delta' in choice:
+                                    # Keep the metadata but ensure there's a content field
+                                    if 'content' not in choice['delta']:
+                                        logger.debug("Adding empty content to final delta")
+                                        choice['delta']['content'] = ''
+                                    
                             # Yield the valid JSON object
+                            logger.debug(f"Yielding JSON: {json_str}")
                             yield json_str.encode('utf-8')
                             
                             # Remove processed JSON from buffer
@@ -124,6 +137,8 @@ class OllamaProxy:
                             break
                 except Exception as parse_error:
                     logger.error(f"Error parsing JSON: {parse_error}")
+                    logger.debug(f"Buffer content: {buffer}")
                     
         except Exception as e:
+            logger.error(f"Stream error: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
